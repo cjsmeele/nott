@@ -7,6 +7,8 @@ usage:
     nott                        → interactive mode
     nott <pagenr> [subpagenr]   → render one page
 
+![screenshots](scr.png)
+
 Likely you will want to have a font in your terminal that can render Teletext
 mosaic characters. I strongly recommend getting the amazing and free
 [unscii](http://pelulamu.net/unscii/) raster font by Viznut.
