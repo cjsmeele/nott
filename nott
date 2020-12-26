@@ -1,0 +1,382 @@
+#!/usr/bin/env perl
+
+# nott - An unofficial terminal-based NOS Teletekst browser
+# Copyright (C) 2020  Chris Smeele
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+# The big thing that makes this different from other existing NOS TT browsers
+# (including the web-based one) is that we parse actual teletext data (i.e. all
+# the glorious stuff like control characters), instead of using the buggy
+# JSON/HTML API that other clients use.
+
+# Likely you will want to have a font in your terminal that can render Teletext
+# mosaic characters. I strongly recommend getting the amazing and free unscii
+# raster font by Viznut:
+#
+#  http://pelulamu.net/unscii/
+#
+# nott outputs mosaic characters in the U+e080-U+e0bf range, as mapped by unscii.
+# There is also a relatively new unicode range for Teletext characters
+# (starting U+1fb00), but this doesn't render well in my terminal, so I ignore it.
+#
+# In the future, I might modify this to be able to use sixels instead of
+# depending on good unicode&font support. But well... my current terminal
+# doesn't support sixels yet :-)
+
+# usage: nott                        → interactive mode
+#        nott <pagenr> [subpagenr]   → render one page
+#
+# See the bottom of this file for interactive-mode keybindings.
+
+# TODO 404 should be non-fatal
+
+use v5.20;
+use feature qw(signatures);
+use warnings;
+no warnings qw(experimental::signatures);
+use autodie;
+use Carp;
+use utf8;
+use open qw( :encoding(UTF-8) :std );
+use LWP::UserAgent;
+#use Data::Dump;
+
+binmode STDOUT, ':encoding(UTF-8)';
+
+my $uas = 'Sowieso de officiële teletekst-client/1.0';
+my $ua = LWP::UserAgent->new(agent => $uas, timeout => 10);
+
+sub slurp { open(my $fh, '<', shift) or croak "$!"; <$fh> }
+
+#sub get { slurp("/tmp/data") }
+sub get { my $r = $ua->get(shift);
+          $r->is_success or croak $r->status_line;
+          $r->decoded_content }
+
+sub get_tt($page = 100, $subpage = 1) {
+    my $data = get sprintf('%s%d-%d',
+                           'https://teletekst-data.nos.nl/page/',
+                           $page, $subpage);
+
+    my @cnav = $data =~ m@(?<=^ftl=)\d+-\d+$@gm;
+    my %nav  = $data =~ m@(?<=^pn=)([pn][s_])(\d+-\d+)$@gm;
+
+    $data =~ m@(?<=^<pre>).*(?=</pre>)@gm or croak "no body";
+    my $body = $&;
+
+    croak "weird body" if length $body != 1000;
+
+    return {body => $body, cnav => [@cnav], nav => {%nav},
+            page => $page, subpage => $subpage};
+}
+
+my %C1 = (ABK => chr(0x00), # {{{
+          ANR => chr(0x01),
+          ANG => chr(0x02),
+          ANY => chr(0x03),
+          ANB => chr(0x04),
+          ANM => chr(0x05),
+          ANC => chr(0x06),
+          ANW => chr(0x07),
+          FSH => chr(0x08),
+          STD => chr(0x09),
+          EBX => chr(0x0a),
+          SBX => chr(0x0b),
+          NSZ => chr(0x0c),
+          DBH => chr(0x0d),
+          DBW => chr(0x0e),
+          DBS => chr(0x0f),
+          MBK => chr(0x10),
+          MSR => chr(0x11),
+          MSG => chr(0x12),
+          MSY => chr(0x13),
+          MSB => chr(0x14),
+          MSM => chr(0x15),
+          MSC => chr(0x16),
+          MSW => chr(0x17),
+          CDY => chr(0x18),
+          SPL => chr(0x19),
+          STL => chr(0x1a),
+          ESC => chr(0x1b),
+          BBD => chr(0x1c),
+          NBD => chr(0x1d),
+          HMS => chr(0x1e),
+          RMS => chr(0x1f)); # }}}
+
+my %M = ( # Map mosaic chars to unscii teletext chars {{{
+    # ideally we would use U+1fb00-U+1fb3b instead, but that renders as
+    # full-width in my terminal.
+    chr(0x20) => chr(0xe080), # 00
+    chr(0x21) => chr(0xe081), # 40
+    chr(0x22) => chr(0xe088), # 04
+    chr(0x23) => chr(0xe089), # 44
+    chr(0x24) => chr(0xe082), # 20
+    chr(0x25) => chr(0xe083), # 60
+    chr(0x26) => chr(0xe08a), # 24
+    chr(0x27) => chr(0xe08b), # 64
+    chr(0x28) => chr(0xe090), # 02
+    chr(0x29) => chr(0xe091), # 42
+    chr(0x2a) => chr(0xe098), # 06
+    chr(0x2b) => chr(0xe099), # 46
+    chr(0x2c) => chr(0xe092), # 22
+    chr(0x2d) => chr(0xe093), # 62
+    chr(0x2e) => chr(0xe09a), # 26
+    chr(0x2f) => chr(0xe09b), # 66
+    chr(0x30) => chr(0xe084), # 10
+    chr(0x31) => chr(0xe085), # 50
+    chr(0x32) => chr(0xe08c), # 14
+    chr(0x33) => chr(0xe08d), # 54
+    chr(0x34) => chr(0xe086), # 30
+    chr(0x35) => chr(0xe087), # 70
+    chr(0x36) => chr(0xe08e), # 34
+    chr(0x37) => chr(0xe08f), # 74
+    chr(0x38) => chr(0xe094), # 12
+    chr(0x39) => chr(0xe095), # 52
+    chr(0x3a) => chr(0xe09c), # 16
+    chr(0x3b) => chr(0xe09d), # 56
+    chr(0x3c) => chr(0xe096), # 32
+    chr(0x3d) => chr(0xe097), # 72
+    chr(0x3e) => chr(0xe09e), # 36
+    chr(0x3f) => chr(0xe09f), # 76
+
+    chr(0x60) => chr(0xe0a0), # 01
+    chr(0x61) => chr(0xe0a1), # 41
+    chr(0x62) => chr(0xe0a8), # 05
+    chr(0x63) => chr(0xe0a9), # 45
+    chr(0x64) => chr(0xe0a2), # 21
+    chr(0x65) => chr(0xe0a3), # 61
+    chr(0x66) => chr(0xe0aa), # 25
+    chr(0x67) => chr(0xe0ab), # 65
+    chr(0x68) => chr(0xe0b0), # 03
+    chr(0x69) => chr(0xe0b1), # 43
+    chr(0x6a) => chr(0xe0b8), # 07
+    chr(0x6b) => chr(0xe0b9), # 47
+    chr(0x6c) => chr(0xe0b2), # 23
+    chr(0x6d) => chr(0xe0b3), # 63
+    chr(0x6e) => chr(0xe0ba), # 27
+    chr(0x6f) => chr(0xe0bb), # 67
+    chr(0x70) => chr(0xe0a4), # 11
+    chr(0x71) => chr(0xe0a5), # 51
+    chr(0x72) => chr(0xe0ac), # 15
+    chr(0x73) => chr(0xe0ad), # 55
+    chr(0x74) => chr(0xe0a6), # 31
+    chr(0x75) => chr(0xe0a7), # 71
+    chr(0x76) => chr(0xe0ae), # 35
+    chr(0x77) => chr(0xe0af), # 75
+    chr(0x78) => chr(0xe0b4), # 13
+    chr(0x79) => chr(0xe0b5), # 53
+    chr(0x7a) => chr(0xe0bc), # 17
+    chr(0x7b) => chr(0xe0bd), # 57
+    chr(0x7c) => chr(0xe0b6), # 33
+    chr(0x7d) => chr(0xe0b7), # 73
+    chr(0x7e) => chr(0xe0be), # 37
+    chr(0x7f) => chr(0xe0bf));# 77 }}}
+
+#              ABK ANR ANG ANY ANB ANM ANC ANW
+my @COLFG = qw(  0 196  46 226  21 201  51  15);
+my @COLBG = qw(  0 196  46 226  21 201  51  15);
+
+sub colorfg  { "\e[38;5;$COLFG[$_[0]]m" }
+sub colorbg  { "\e[48;5;$COLBG[$_[0]]m" }
+sub colorclr { "\e[0m" }
+
+sub eval_tt($data) {
+    local $_ = $data;
+
+    my %st;
+
+    my $out;
+    my $i = 0;
+
+    for (split //) {
+
+        if ($i % 40 == 0) {
+            %st = (fg => 7, bg => 0, mosaic => 0);
+            $out .= colorbg(0) . " " . colorclr . "\n" if $i;
+            $out .= colorbg($st{bg}) . colorfg($st{fg});
+        }
+        ++$i;
+
+        if ($_ ge ' ') {
+            if ($st{mosaic}) {
+                $out .= exists($M{$_}) ? $M{$_} : '?';
+            } else {
+                $out .= $_ eq chr(0x7f) ? '█' : $_;
+            }
+        } else {
+            if ($_ ge $C1{ABK} && $_ le $C1{ANW}) {
+                $st{fg} = ord($_) - ord($C1{ABK});
+                $st{mosaic} = 0;
+
+                $out .= colorfg $st{fg};
+
+            } elsif ($_ ge $C1{MBK} && $_ le $C1{MSW}) {
+                $st{fg} = ord($_) - ord($C1{MBK});
+                $st{mosaic} = 1;
+
+                $out .= colorfg $st{fg};
+
+            } elsif ($_ eq $C1{BBD}) {
+                $st{bg} = 0;
+                $out .= colorbg $st{bg};
+
+            } elsif ($_ eq $C1{NBD}) {
+                $st{bg} = $st{fg};
+                $out .= colorbg $st{bg};
+
+            } elsif ($_ eq $C1{DBH}) { # Doubled char sizes not supported.
+            } elsif ($_ eq $C1{DBW}) {
+            } elsif ($_ eq $C1{DBS}) {
+            } elsif ($_ eq $C1{NSZ}) {
+            } else {
+                #printf STDERR "?<%02x>", ord $_;
+            }
+            $out .= ' ';
+        }
+    }
+
+    $out .= colorbg(0) . " " . colorclr . "\n";
+    $out
+}
+
+if (@ARGV) {
+    print eval_tt get_tt(@ARGV)->{body};
+    exit;
+}
+
+# ----------------------------------------------------------------------
+# interactive mode
+
+my $LINES = 25+2;
+my $COLS  = 40;
+
+my $tt;
+my @hist;
+my $histi = -1;
+
+sub print_nav {
+    print  colorbg(0) . colorfg(7);
+    printf "%s\n « %5s ← %5s  %5s  %5s → %5s » ",
+           " "x($COLS+1),
+           $tt->{nav}->{p_} // "",
+           $tt->{nav}->{ps} // "",
+           $tt->{page}."-".$tt->{subpage},
+           $tt->{nav}->{ns} // "",
+           $tt->{nav}->{n_} // "";
+    print  colorclr;
+}
+
+sub go($page=100, $subpage=1) {
+    my $fst = not defined $tt;
+
+    $tt = get_tt($page, $subpage);
+
+    print "\r\e[${LINES}A" unless $fst;
+    print eval_tt $tt->{body};
+
+    if ($histi < $#hist) {
+        if ($hist[$histi+1][0] != $page
+         or $hist[$histi+1][1] != $subpage) {
+            splice @hist, $histi+1;
+            push @hist, [$page, $subpage];
+            $histi++;
+        } else {
+            $histi++;
+        }
+    } else {
+        push @hist, [$page, $subpage];
+        $histi++;
+    }
+
+    print_nav;
+}
+
+sub back {
+    if ($histi > 0) {
+        # Kinda wonky but hey it works.
+        $histi -= 2;
+        go $hist[$histi+1]->[0], $hist[$histi+1]->[1];
+    }
+}
+sub forward {
+    if ($histi < $#hist) {
+        go $hist[$histi+1]->[0], $hist[$histi+1]->[1];
+    }
+}
+
+sub pnext { go $tt->{nav}->{n_} =~ m/(\d+)-(\d+)/ if exists $tt->{nav}->{n_} }
+sub pprev { go $tt->{nav}->{p_} =~ m/(\d+)-(\d+)/ if exists $tt->{nav}->{p_} }
+sub snext { go $tt->{nav}->{ns} =~ m/(\d+)-(\d+)/ if exists $tt->{nav}->{ns} }
+sub sprev { go $tt->{nav}->{ps} =~ m/(\d+)-(\d+)/ if exists $tt->{nav}->{ps} }
+
+use Term::ReadKey;
+
+print "\e[2J\e[1;1H";
+go(100);
+
+$| = 1;
+ReadMode 3;
+
+sub clean_exit { ReadMode 0; print "\e[2J\e[1;1H"; exit 0 }
+
+  $SIG{TERM}
+= $SIG{INT}
+= $SIG{HUP}
+= sub { clean_exit };
+
+sub ctl { $_[0] eq '?' ? "\x7f" : chr(ord(uc $_[0])-ord('A')+1) }
+
+my $inp = "";
+while (1) {
+    print "\e[19G";
+    if (length $inp) {
+        printf "%-3d  \e[%dD", $inp, 5-length $inp;
+    } else {
+        print "$tt->{page}-$tt->{subpage}";
+        print "\e[5D";
+    }
+    for (ReadKey 0) {
+        clean_exit unless defined $_;
+        clean_exit if $_ eq ctl('C')
+                   or $_ eq ctl('D')
+                   or $_ eq ctl('[');
+
+        if ($_ eq ctl('H') or $_ eq ctl('?')) {
+            $inp = substr $inp, 0, -1 if length $inp;
+        } elsif ($_ ge '0' and $_ le '9') {
+            $inp .= $_;
+            if (length($inp) == 3) {
+                go($inp);
+                $inp = '';
+            }
+        } elsif ($_ eq 'q') { clean_exit;
+        } elsif ($_ eq ctl('O')             ) { back
+        } elsif ($_ eq ctl('I')             ) { forward
+        } elsif ($_ eq ctl('N') or $_ eq 'j') { pnext
+        } elsif ($_ eq ctl('P') or $_ eq 'k') { pprev
+        } elsif ($_ eq ctl('F') or $_ eq 'l') { snext
+        } elsif ($_ eq ctl('B') or $_ eq 'h') { sprev
+        } elsif ($_ eq '!') { go $tt->{cnav}->[0] =~ m/(\d+)-(\d+)/
+        } elsif ($_ eq '@') { go $tt->{cnav}->[1] =~ m/(\d+)-(\d+)/
+        } elsif ($_ eq '#') { go $tt->{cnav}->[2] =~ m/(\d+)-(\d+)/
+        } elsif ($_ eq '$') { go $tt->{cnav}->[3] =~ m/(\d+)-(\d+)/
+        } elsif ($_ eq 'H') { go 100
+        } elsif ($_ eq 'W') { go 702
+        } elsif ($_ eq 'N') { go 101
+        } elsif ($_ eq 'F') { go 520
+        } elsif ($_ eq 'P') { go 201
+        }
+    }
+}
