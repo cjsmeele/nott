@@ -54,9 +54,7 @@
 # TODO 404 should be non-fatal
 
 use v5.20;
-use feature qw(signatures);
 use warnings;
-no warnings qw(experimental::signatures);
 use autodie;
 use Carp;
 use utf8;
@@ -66,6 +64,30 @@ use LWP::UserAgent;
 use FindBin;
 
 binmode STDOUT, ':encoding(UTF-8)';
+
+sub foldl(&@) {
+    my ($c, $v, @l) = @_;
+    for (@l) {
+        local $a = $v;
+        local $b = $_;
+        $v = $c->();
+    }
+    $v
+}
+
+sub min { foldl { $a < $b ? $a : $b } @_ }
+sub max { foldl { $a < $b ? $b : $a } @_ }
+
+sub zip {
+    my @acc;
+    for my $i (0..(min map $#$_, @_)) {
+        push @acc, [map $_->[$i], @_];
+    }
+    @acc
+}
+
+use feature qw(signatures);
+no warnings qw(experimental::signatures);
 
 my $uas = 'Sowieso de officiële teletekst-client/1.0';
 my $ua = LWP::UserAgent->new(agent => $uas, timeout => 10);
@@ -94,142 +116,132 @@ sub get_tt($page = 100, $subpage = 1) {
             page => $page, subpage => $subpage};
 }
 
-my %C1 = (ABK => chr(0x00), # {{{
-          ANR => chr(0x01),
-          ANG => chr(0x02),
-          ANY => chr(0x03),
-          ANB => chr(0x04),
-          ANM => chr(0x05),
-          ANC => chr(0x06),
-          ANW => chr(0x07),
-          FSH => chr(0x08),
-          STD => chr(0x09),
-          EBX => chr(0x0a),
-          SBX => chr(0x0b),
-          NSZ => chr(0x0c),
-          DBH => chr(0x0d),
-          DBW => chr(0x0e),
-          DBS => chr(0x0f),
-          MBK => chr(0x10),
-          MSR => chr(0x11),
-          MSG => chr(0x12),
-          MSY => chr(0x13),
-          MSB => chr(0x14),
-          MSM => chr(0x15),
-          MSC => chr(0x16),
-          MSW => chr(0x17),
-          CDY => chr(0x18),
-          SPL => chr(0x19),
-          STL => chr(0x1a),
-          ESC => chr(0x1b),
-          BBD => chr(0x1c),
-          NBD => chr(0x1d),
-          HMS => chr(0x1e),
-          RMS => chr(0x1f)); # }}}
+# Control characters {{{
 
-my %M = ( # Map mosaic chars to unscii teletext chars {{{
-    # ideally we would use U+1fb00-U+1fb3b instead, but that renders as
-    # full-width in my terminal.
-    chr(0x20) => chr(0xe080), # 00
-    chr(0x21) => chr(0xe081), # 40
-    chr(0x22) => chr(0xe088), # 04
-    chr(0x23) => chr(0xe089), # 44
-    chr(0x24) => chr(0xe082), # 20
-    chr(0x25) => chr(0xe083), # 60
-    chr(0x26) => chr(0xe08a), # 24
-    chr(0x27) => chr(0xe08b), # 64
-    chr(0x28) => chr(0xe090), # 02
-    chr(0x29) => chr(0xe091), # 42
-    chr(0x2a) => chr(0xe098), # 06
-    chr(0x2b) => chr(0xe099), # 46
-    chr(0x2c) => chr(0xe092), # 22
-    chr(0x2d) => chr(0xe093), # 62
-    chr(0x2e) => chr(0xe09a), # 26
-    chr(0x2f) => chr(0xe09b), # 66
-    chr(0x30) => chr(0xe084), # 10
-    chr(0x31) => chr(0xe085), # 50
-    chr(0x32) => chr(0xe08c), # 14
-    chr(0x33) => chr(0xe08d), # 54
-    chr(0x34) => chr(0xe086), # 30
-    chr(0x35) => chr(0xe087), # 70
-    chr(0x36) => chr(0xe08e), # 34
-    chr(0x37) => chr(0xe08f), # 74
-    chr(0x38) => chr(0xe094), # 12
-    chr(0x39) => chr(0xe095), # 52
-    chr(0x3a) => chr(0xe09c), # 16
-    chr(0x3b) => chr(0xe09d), # 56
-    chr(0x3c) => chr(0xe096), # 32
-    chr(0x3d) => chr(0xe097), # 72
-    chr(0x3e) => chr(0xe09e), # 36
-    chr(0x3f) => chr(0xe09f), # 76
+my %C1 = map(($_->[0], chr $_->[1]),
+         zip [qw/ ABK ANR ANG ANY ANB ANM ANC ANW
+                  FSH STD EBX SBX NSZ DBH DBW DBS
+                  MBK MSR MSG MSY MSB MSM MSC MSW
+                  CDY SPL STL ESC BBD NBD HMS RMS /],
+             [0x00 .. 0x1f]);
 
-    chr(0x40) => chr(0x40), # Uppercase A-Z.
-    chr(0x41) => chr(0x41), # (yes, we wouldn't need to spell this all out, but eh)
-    chr(0x42) => chr(0x42),
-    chr(0x43) => chr(0x43),
-    chr(0x44) => chr(0x44),
-    chr(0x45) => chr(0x45),
-    chr(0x46) => chr(0x46),
-    chr(0x47) => chr(0x47),
-    chr(0x48) => chr(0x48),
-    chr(0x49) => chr(0x49),
-    chr(0x4a) => chr(0x4a),
-    chr(0x4b) => chr(0x4b),
-    chr(0x4c) => chr(0x4c),
-    chr(0x4d) => chr(0x4d),
-    chr(0x4e) => chr(0x4e),
-    chr(0x4f) => chr(0x4f),
-    chr(0x50) => chr(0x50),
-    chr(0x51) => chr(0x51),
-    chr(0x52) => chr(0x52),
-    chr(0x53) => chr(0x53),
-    chr(0x54) => chr(0x54),
-    chr(0x55) => chr(0x55),
-    chr(0x56) => chr(0x56),
-    chr(0x57) => chr(0x57),
-    chr(0x58) => chr(0x58),
-    chr(0x59) => chr(0x59),
-    chr(0x5a) => chr(0x5a),
+# }}}
+# Map mosaic dots for translation to unicode {{{
 
-    # These are actually region dependent. No idea what we have in NL.
-    chr(0x5b) => chr(0x2190), # ←
-    chr(0x5c) => chr(0x00bd), # ½
-    chr(0x5d) => chr(0x2192), # →
-    chr(0x5e) => chr(0x2191), # ↑
-    chr(0x5f) => chr(0x005f), # _
+# input: a 6-bit number, 1 bit per sextant dot.
+#        dots are counted left to right, line by line.
+#        (MSB is bottom-right)
+#        0 1
+#        2 3
+#        4 5
+#
+# output: a N-bit number, representing an offset into a
+#         certain unicode block.
 
-    chr(0x60) => chr(0xe0a0), # 01
-    chr(0x61) => chr(0xe0a1), # 41
-    chr(0x62) => chr(0xe0a8), # 05
-    chr(0x63) => chr(0xe0a9), # 45
-    chr(0x64) => chr(0xe0a2), # 21
-    chr(0x65) => chr(0xe0a3), # 61
-    chr(0x66) => chr(0xe0aa), # 25
-    chr(0x67) => chr(0xe0ab), # 65
-    chr(0x68) => chr(0xe0b0), # 03
-    chr(0x69) => chr(0xe0b1), # 43
-    chr(0x6a) => chr(0xe0b8), # 07
-    chr(0x6b) => chr(0xe0b9), # 47
-    chr(0x6c) => chr(0xe0b2), # 23
-    chr(0x6d) => chr(0xe0b3), # 63
-    chr(0x6e) => chr(0xe0ba), # 27
-    chr(0x6f) => chr(0xe0bb), # 67
-    chr(0x70) => chr(0xe0a4), # 11
-    chr(0x71) => chr(0xe0a5), # 51
-    chr(0x72) => chr(0xe0ac), # 15
-    chr(0x73) => chr(0xe0ad), # 55
-    chr(0x74) => chr(0xe0a6), # 31
-    chr(0x75) => chr(0xe0a7), # 71
-    chr(0x76) => chr(0xe0ae), # 35
-    chr(0x77) => chr(0xe0af), # 75
-    chr(0x78) => chr(0xe0b4), # 13
-    chr(0x79) => chr(0xe0b5), # 53
-    chr(0x7a) => chr(0xe0bc), # 17
-    chr(0x7b) => chr(0xe0bd), # 57
-    chr(0x7c) => chr(0xe0b6), # 33
-    chr(0x7d) => chr(0xe0b7), # 73
-    chr(0x7e) => chr(0xe0be), # 37
-    chr(0x7f) => chr(0xe0bf));# 77 }}}
+sub to_unscii_pua($c) {
+    # 0 3
+    # 1 4
+    # 2 5
+    my @b = (map !!($c & (1<<$_)), 0..5)
+            [0,2,4,1,3,5]; # transpose
+    foldl { $a | ($b[$b]<<$b) } 0, 0..$#b;
+}
+
+sub to_braille($c) {
+    # 0 3
+    # 1 4
+    # 2 5
+    # 6 7 (yep)
+    my @b = (map !!($c & (1<<$_)), 0..5)
+            [0,2,2,1,3,3,4,5];
+    foldl { $a | ($b[$b]<<$b) } 0, 0..$#b;
+}
+
+# }}}
+# Mosaic character mappings {{{
+
+our %M = (
+    sextants => # {{{
+        # unicode sextant block drawing characters.
+        # this is relatively new, so it may not work with your fonts.
+        [('?') x 0x20 #     0x00
+        ,' '          #     0x20
+        ,map(chr,     #     0x21
+             0x1fb00 .. 0x1fb13),
+        ,chr(0x258c)  #     0x35  (left half)
+        ,map(chr,     #     0x36
+             0x1fb14 .. 0x1fb1d),
+        ,'@'          #     0x40
+        ,'A'..'Z'     #
+        ,chr(0x2190)  # ←   0x5b
+        ,chr(0x00bd)  # ½
+        ,chr(0x2192)  # →
+        ,chr(0x2191)  # ↑
+        ,chr(0x005f)  # _
+        ,map(chr,     #     0x60
+             0x1fb1e .. 0x1fb27),
+        ,chr(0x2590)  #     0x6a  (right half)
+        ,map(chr,     #     0x6b
+             0x1fb28 .. 0x1fb3b),
+        ,chr(0x2588)] #     0x7f  (full block) }}}
+   ,braille => # {{{
+        # unicode braille
+        # braille has 8 dots instead of six.
+        # close enough.
+        [('?') x 0x20 #     0x00
+        ,(map chr(0x2800+to_braille($_)),
+              0x00 .. 0x1f)
+        ,'@'          #     0x40
+        ,'A'..'Z'     #
+        ,chr(0x2190)  # ←   0x5b
+        ,chr(0x00bd)  # ½
+        ,chr(0x2192)  # →
+        ,chr(0x2191)  # ↑
+        ,chr(0x005f)  # _
+        ,(map chr(0x2800+to_braille($_)),
+              0x20 .. 0x3f)] # }}}
+   ,unscii_pua => # {{{
+        # needed only for unscii < 2.0. newer font versions have these
+        # characters mapped according to unicode v13, allowing use of the
+        # 'sextants' mapping above.
+        [('?') x 0x20 #     0x00
+        ,(map chr(0xe080+to_unscii_pua($_)),
+              0x00 .. 0x1f)
+        ,'@'          #     0x40
+        ,'A'..'Z'     #
+        ,chr(0x2190)  # ←   0x5b
+        ,chr(0x00bd)  # ½
+        ,chr(0x2192)  # →
+        ,chr(0x2191)  # ↑
+        ,chr(0x005f)  # _
+        ,(map chr(0xe080+to_unscii_pua($_)),
+              0x20 .. 0x3f)] # }}}
+   ,fallback => # {{{
+        # as a 'fallback', do not attempt to draw special
+        # characters at all.
+        [('?') x 0x20 #     0x00
+        ,(' ') x 0x20
+        ,'@'          #     0x40
+        ,'A'..'Z'     #
+        ,(' ') x 5
+        ,(' ') x 0x1f
+        ,'#'] # }}}
+);
+
+our @M = @{$M{sextants}};
+
+# use this to figure out how your font renders each
+# character mapping:
+#
+#say "num | braille | sextants | unscii_pua";
+#say join " | ", @$_
+#    for zip [map sprintf("%02x", $_), 0..127],
+#            $M{braille},
+#            $M{sextants},
+#            $M{unscii_pua};
+#exit;
+
+# }}}
 
 #              ABK ANR ANG ANY ANB ANM ANC ANW
 my @COLFG = qw(  0 196  46 226  21 201  51  15);
@@ -258,7 +270,7 @@ sub eval_tt($data) {
 
         if ($_ ge ' ') {
             if ($st{mosaic}) {
-                $out .= exists($M{$_}) ? $M{$_} : '?';
+                $out .= ord($_) < @M ? $M[ord $_] : '?';
             } else {
                 $out .= $_ eq chr(0x7f) ? '█' : $_;
             }
@@ -376,13 +388,13 @@ use Term::ReadKey;
 sub ctl { $_[0] eq '?' ? "\x7f" : chr(ord(uc $_[0])-ord('A')+1) }
 
 # Try to find a keybindings file.
-my %keys;
+our %keys;
 for ("$ENV{HOME}/.nottrc",
      ($ENV{XDG_CONFIG_HOME} // "$ENV{HOME}/.config") . "/nottrc",
      $FindBin::RealBin . "/nottrc") {
 
      next unless -x;
-     %keys = do $_;
+     do $_;
      $@ and die "could not evaluate nottrc at '$_': $@";
      last
 }

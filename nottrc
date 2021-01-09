@@ -1,6 +1,29 @@
 #!/bin/false
 # ^ just in case someone tries to execute this directly.
 
+# Character set
+# -------------
+
+# Uncomment one of these four to use the corresponding
+# character mapping for mosaic block drawing characters.
+#
+# If you are *not* using the unscii font, then 'braille' is
+# probably the safest choice. Some fonts may have issues
+# where sextants are rendered wider than expected, or where
+# they are not rendered at all.
+
+#@M = @{$M{sextants}};   # unicode sextant chars (default)
+#@M = @{$M{braille}};    # unicode braille chars
+#@M = @{$M{unscii_pua}}; # PUA-mapped unscii teletext chars (for unscii version < 2.0)
+#@M = @{$M{fallback}};   # no block-drawing characters at all.
+
+# You can also define @M yourself - it should be an array
+# with characters for each of the 128 chars in the charset. See also:
+# https://en.wikipedia.org/w/index.php?title=Videotex_character_set&oldid=998638658#Data_Syntax_2
+
+# Keybindings
+# -----------
+
 $keys{q} = $keys{x} = $keys{ctl 'X'} = \&clean_exit;
 
 # ctl = ctrl key + ... (upper/lowercase is ignored for this)
@@ -25,7 +48,5 @@ $keys{N} = 101; # nieuws
 $keys{F} = 520; # financieel
 $keys{P} = 201; # programma's
 $keys{O} = 401; # opmerkelijk
-
-%keys # this must be on the last line
 
 # vim: ft=perl

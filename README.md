@@ -13,14 +13,17 @@ dependencies: perl >= 5.20, LWP::UserAgent, and possibly Crypt::SSLeay.
 
 Likely you will want to have a font in your terminal that can render Teletext
 mosaic characters. I strongly recommend getting the amazing and free
-[unscii](http://pelulamu.net/unscii/) raster font by Viznut. nott
-outputs mosaic characters via unicode's private use area according to
-how unscii maps these.
+[unscii](http://pelulamu.net/unscii/) raster font by Viznut.
 
 The big thing that makes nott different from other existing NOS TT browsers
 (including the official web-based one) is that we parse actual teletext
 data (i.e. all the glorious stuff like control characters), instead of
 using the buggy JSON/HTML API that other clients use.
+
+If you have issues with font rendering, check the `nottrc` file and
+change the selected character mapping. nott uses either Unicode v13
+sextant chars (the default), braille chars, or unscii PUA teletext
+chars.
 
 Interactive mode keybindings:
 
