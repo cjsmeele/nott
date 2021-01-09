@@ -39,6 +39,17 @@
 #        nott <pagenr> [subpagenr]   → render one page
 #
 # See the bottom of this file for interactive-mode keybindings.
+#
+# keybindings can be customized by creating an *executable* rc file in one of
+# the following locations (in descending order of precedence):
+#
+# - $HOME/.nottrc
+# - $XDG_CONFIG_HOME/nottrc (or ~/.config/nottrc)
+# - <directory of this file>/nottrc
+#
+# By default, if you downloaded nott in an archive or via git, you'll already
+# have a nottrc file next to this script. You can use that as a reference for
+# how to add/modify keybindings.
 
 # TODO 404 should be non-fatal
 
@@ -52,6 +63,7 @@ use utf8;
 use open qw( :encoding(UTF-8) :std );
 use LWP::UserAgent;
 #use Data::Dump;
+use FindBin;
 
 binmode STDOUT, ':encoding(UTF-8)';
 
@@ -356,7 +368,24 @@ sub pprev { go $tt->{nav}->{p_} =~ m/(\d+)-(\d+)/ if exists $tt->{nav}->{p_} }
 sub snext { go $tt->{nav}->{ns} =~ m/(\d+)-(\d+)/ if exists $tt->{nav}->{ns} }
 sub sprev { go $tt->{nav}->{ps} =~ m/(\d+)-(\d+)/ if exists $tt->{nav}->{ps} }
 
+# go to one of the four colored navigation destinations.
+sub cnav($i = 0) { $i < 4 and go $tt->{cnav}->[$i] =~ m/(\d+)-(\d+)/ }
+
 use Term::ReadKey;
+
+sub ctl { $_[0] eq '?' ? "\x7f" : chr(ord(uc $_[0])-ord('A')+1) }
+
+# Try to find a keybindings file.
+my %keys;
+for ("$ENV{HOME}/.nottrc",
+     ($ENV{XDG_CONFIG_HOME} // "$ENV{HOME}/.config") . "/nottrc",
+     $FindBin::RealBin . "/nottrc") {
+
+     next unless -x;
+     %keys = do $_;
+     $@ and die "could not evaluate nottrc at '$_': $@";
+     last
+}
 
 print "\e[2J\e[1;1H";
 go(100);
@@ -370,8 +399,6 @@ sub clean_exit { ReadMode 0; print "\e[2J\e[1;1H"; exit 0 }
 = $SIG{INT}
 = $SIG{HUP}
 = sub { clean_exit };
-
-sub ctl { $_[0] eq '?' ? "\x7f" : chr(ord(uc $_[0])-ord('A')+1) }
 
 my $inp = "";
 while (1) {
@@ -388,14 +415,34 @@ while (1) {
                    or $_ eq ctl('D')
                    or $_ eq ctl('[');
 
-        if ($_ eq ctl('H') or $_ eq ctl('?')) {
+        if (exists $keys{$_}) {
+            # evaluate nottrc keybinding.
+
+            # `$keys{...} = undef` removes a default keybinding.
+            next unless defined $keys{$_};
+
+            my $r = ref $keys{$_};
+            if ($r eq 'CODE') {
+                $keys{$_}->()
+            } elsif (not $r) {
+                go $keys{$_}
+            } else {
+                die sprintf "Unexpected %s in %%keys for key \\x%02x\n", $r, ord($_);
+            }
+        } elsif ($_ eq ctl('H') or $_ eq ctl('?')) {
             $inp = substr $inp, 0, -1 if length $inp;
         } elsif ($_ ge '0' and $_ le '9') {
             $inp .= $_;
             if (length($inp) == 3) {
-                go($inp);
+                go $inp;
                 $inp = '';
             }
+
+            # Default keybindings follow. These are only
+            # used if no 'nottrc' file could be executed,
+            # or if these keys are not overridden by the
+            # nottrc file.
+
         } elsif ($_ eq 'q') { clean_exit;
         } elsif ($_ eq ctl('O')             ) { back
         } elsif ($_ eq ctl('I')             ) { forward
@@ -403,15 +450,16 @@ while (1) {
         } elsif ($_ eq ctl('P') or $_ eq 'k') { pprev
         } elsif ($_ eq ctl('F') or $_ eq 'l') { snext
         } elsif ($_ eq ctl('B') or $_ eq 'h') { sprev
-        } elsif ($_ eq '!') { go $tt->{cnav}->[0] =~ m/(\d+)-(\d+)/
-        } elsif ($_ eq '@') { go $tt->{cnav}->[1] =~ m/(\d+)-(\d+)/
-        } elsif ($_ eq '#') { go $tt->{cnav}->[2] =~ m/(\d+)-(\d+)/
-        } elsif ($_ eq '$') { go $tt->{cnav}->[3] =~ m/(\d+)-(\d+)/
+        } elsif ($_ eq '!') { cnav 0
+        } elsif ($_ eq '@') { cnav 1
+        } elsif ($_ eq '#') { cnav 2
+        } elsif ($_ eq '$') { cnav 3
         } elsif ($_ eq 'H') { go 100
         } elsif ($_ eq 'W') { go 702
         } elsif ($_ eq 'N') { go 101
         } elsif ($_ eq 'F') { go 520
         } elsif ($_ eq 'P') { go 201
+        } elsif ($_ eq 'O') { go 401
         }
     }
 }

@@ -1,0 +1,31 @@
+#!/bin/false
+# ^ just in case someone tries to execute this directly.
+
+$keys{q} = $keys{x} = $keys{ctl 'X'} = \&clean_exit;
+
+# ctl = ctrl key + ... (upper/lowercase is ignored for this)
+# (some ctrl keys cannot be bound depending on your terminal)
+$keys{ctl 'O'}            = \&back;  # history
+$keys{ctl 'I'}            = \&forward;
+$keys{ctl 'N'} = $keys{j} = \&pnext; # page
+$keys{ctl 'P'} = $keys{k} = \&pprev;
+$keys{ctl 'F'} = $keys{l} = \&snext; # subpage
+$keys{ctl 'B'} = $keys{h} = \&sprev;
+
+# make sure to quote special characters.
+$keys{'!'} = sub { cnav 0 }; # red/green/yellow/cyan nav buttons
+$keys{'@'} = sub { cnav 1 };
+$keys{'#'} = sub { cnav 2 };
+$keys{'$'} = sub { cnav 3 };
+
+# note: case matters. this is shift key + ...
+$keys{H} = 100; # some bookmarks. home
+$keys{W} = 702; # weer
+$keys{N} = 101; # nieuws
+$keys{F} = 520; # financieel
+$keys{P} = 201; # programma's
+$keys{O} = 401; # opmerkelijk
+
+%keys # this must be on the last line
+
+# vim: ft=perl
