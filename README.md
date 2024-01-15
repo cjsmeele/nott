@@ -9,11 +9,11 @@ usage:
 
 ![screenshots](scr.png)
 
-dependencies: perl >= 5.20, LWP::UserAgent, and possibly Crypt::SSLeay.
+dependencies: perl >= 5.20, LWP::UserAgent, and possibly Mozilla::CA.
 
 Likely you will want to have a font in your terminal that can render Teletext
 mosaic characters. I strongly recommend getting the amazing and free
-[unscii](http://pelulamu.net/unscii/) raster font by Viznut.
+[unscii](http://viznut.fi/unscii/) raster font by Viznut.
 
 The big thing that makes nott different from other existing NOS TT browsers
 (including the official web-based one) is that we parse actual teletext
